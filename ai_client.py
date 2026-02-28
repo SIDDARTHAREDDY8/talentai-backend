@@ -9,7 +9,7 @@ import httpx
 from typing import Optional
 
 ANTHROPIC_API_KEY = os.getenv("AI_API_KEY", "")
-MODEL = "claude-3-5-haiku-20241022"
+MODEL = "claude-haiku-4-5-20251001"
 BASE_URL = "https://api.anthropic.com/v1/messages"
 
 
