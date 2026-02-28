@@ -1,0 +1,177 @@
+"""
+AI Client — wraps Anthropic API calls
+All LLM-powered features go through here.
+"""
+
+import os
+import json
+import httpx
+from typing import Optional
+
+ANTHROPIC_API_KEY = os.getenv("AI_API_KEY", "")
+MODEL = "claude-sonnet-4-20250514"
+BASE_URL = "https://api.anthropic.com/v1/messages"
+
+
+async def call_ai(
+    prompt: str,
+    system: str = "You are an expert AI assistant.",
+    max_tokens: int = 1000,
+    api_key: Optional[str] = None,
+) -> str:
+    """Send a prompt to the AI and return the text response."""
+    key = api_key or ANTHROPIC_API_KEY
+    if not key:
+        print("⚠️  No AI API key configured. Set AI_API_KEY in .env")
+        return ""
+
+    headers = {
+        "Content-Type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+    }
+    body = {
+        "model": MODEL,
+        "max_tokens": max_tokens,
+        "system": system,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(BASE_URL, headers=headers, json=body)
+        data = resp.json()
+        return data.get("content", [{}])[0].get("text", "")
+
+
+async def call_ai_json(
+    prompt: str,
+    system: str = "Return only valid JSON, no markdown fences.",
+    max_tokens: int = 800,
+    api_key: Optional[str] = None,
+) -> Optional[dict]:
+    """Call AI and parse JSON response. Returns None on failure."""
+    text = await call_ai(prompt, system, max_tokens, api_key)
+    if not text:
+        return None
+    try:
+        clean = text.strip().replace("```json", "").replace("```", "").strip()
+        return json.loads(clean)
+    except json.JSONDecodeError:
+        return None
+
+
+# ── Specific AI tasks ─────────────────────────────────────────────────────────
+
+async def ai_evaluate_answer(
+    question: str,
+    user_answer: str,
+    reference: str,
+    api_key: Optional[str] = None,
+) -> Optional[dict]:
+    """
+    Ask AI to evaluate a candidate's interview answer.
+    Returns {score, feedback, ideal, missed}
+    """
+    return await call_ai_json(
+        f"""Senior technical interviewer. Evaluate strictly.
+Question: {question}
+Candidate answer: {user_answer}
+Reference answer: {reference}
+
+Return JSON: {{
+  "score": 0-100,
+  "feedback": "2-3 specific sentences on what was good and what was missing",
+  "ideal": "model answer in 3-5 sentences",
+  "missed": "the single most important concept the candidate missed, or empty string"
+}}""",
+        api_key=api_key,
+    )
+
+
+async def ai_analyze_resume(resume_text: str, api_key: Optional[str] = None) -> Optional[dict]:
+    """
+    Ask AI to assess the resume holistically.
+    Returns {strengths, level, bestRole, improvements, summary, atsScore, atsIssues}
+    """
+    return await call_ai_json(
+        f"""Analyze this resume as an expert recruiter.
+Resume: {resume_text[:3000]}
+
+Return JSON: {{
+  "strengths": ["2-3 strengths as full sentences"],
+  "level": "Junior|Mid|Senior",
+  "bestRole": "Software Engineer|Data Scientist|Data Engineer|ML Engineer|Frontend Developer",
+  "improvements": ["2 concrete improvement suggestions"],
+  "summary": "2-sentence profile summary",
+  "atsScore": 0-100,
+  "atsIssues": ["up to 3 ATS/formatting issues found"]
+}}""",
+        api_key=api_key,
+    )
+
+
+async def ai_match_jd(resume_text: str, jd_text: str, api_key: Optional[str] = None) -> Optional[dict]:
+    """Compare resume to job description."""
+    return await call_ai_json(
+        f"""Hiring manager. Compare resume to job description.
+Resume: {resume_text[:2500]}
+Job Description: {jd_text[:2000]}
+
+Return JSON: {{
+  "matchScore": 0-100,
+  "verdict": "Strong Match|Good Match|Partial Match|Weak Match",
+  "matchedKeywords": [],
+  "missingKeywords": [],
+  "strengths": ["2-3 reasons they're a good fit"],
+  "gaps": ["2-3 concerns or gaps"],
+  "recommendation": "2-sentence hiring recommendation",
+  "tailoredTip": "1 specific tip to tailor the application"
+}}""",
+        api_key=api_key,
+    )
+
+
+async def ai_generate_cover_letter(
+    resume_text: str,
+    jd_text: str,
+    company: str,
+    tone: str,
+    api_key: Optional[str] = None,
+) -> str:
+    """Generate a tailored cover letter."""
+    return await call_ai(
+        f"""Write a compelling cover letter.
+Resume: {resume_text[:2000]}
+Job Description: {jd_text[:1500]}
+Company: {company or "the company"}
+Tone: {tone}
+
+Requirements:
+- 3 paragraphs, ~270 words
+- Hook opening — do NOT start with "I am writing to"
+- Paragraph 2: specific alignment between candidate skills and JD requirements
+- Paragraph 3: strong close with call to action
+- Sound human and specific, not generic
+- No clichés like "team player" or "hardworking"
+
+Return only the letter text, no subject line or extra commentary.""",
+        system="You are an expert cover letter writer.",
+        max_tokens=900,
+        api_key=api_key,
+    )
+
+
+async def ai_learning_plan(role: str, missing_skills: list, api_key: Optional[str] = None) -> Optional[dict]:
+    """Generate a personalized learning plan for missing skills."""
+    return await call_ai_json(
+        f"""Create a learning plan for someone targeting {role}.
+Missing skills: {', '.join(missing_skills[:10])}
+
+Return JSON: {{
+  "priority": ["top 3 skills to learn first with reason"],
+  "timeline": "X weeks",
+  "resources": {{"skill_name": "specific resource or course"}},
+  "weeklyPlan": ["week 1 focus", "week 2 focus", "week 3 focus"]
+}}""",
+        api_key=api_key,
+    )
