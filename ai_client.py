@@ -38,9 +38,19 @@ async def call_ai(
     }
 
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(BASE_URL, headers=headers, json=body)
-        data = resp.json()
-        return data.get("content", [{}])[0].get("text", "")
+        try:
+            resp = await client.post(BASE_URL, headers=headers, json=body)
+            data = resp.json()
+            print(f"🔍 AI API status: {resp.status_code}, key_prefix: {key[:15] if key else 'NONE'}")
+            if resp.status_code != 200:
+                print(f"❌ AI API error {resp.status_code}: {data}")
+                return ""
+            text = data.get("content", [{}])[0].get("text", "")
+            print(f"✅ AI API responded, {len(text)} chars")
+            return text
+        except Exception as e:
+            print(f"❌ AI API exception: {e}")
+            return ""  
 
 
 async def call_ai_json(
@@ -52,11 +62,15 @@ async def call_ai_json(
     """Call AI and parse JSON response. Returns None on failure."""
     text = await call_ai(prompt, system, max_tokens, api_key)
     if not text:
+        print("⚠️  call_ai returned empty text")
         return None
     try:
         clean = text.strip().replace("```json", "").replace("```", "").strip()
-        return json.loads(clean)
-    except json.JSONDecodeError:
+        result = json.loads(clean)
+        print(f"✅ AI JSON parsed OK: {list(result.keys())}")
+        return result
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON parse error: {e} | Raw text: {text[:200]}")
         return None
 
 
