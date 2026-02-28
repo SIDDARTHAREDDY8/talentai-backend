@@ -1,29 +1,42 @@
+"""
+Database — async PostgreSQL via asyncpg
+Connects to Supabase (free PostgreSQL hosting)
+"""
+
 import os
 import asyncpg
 from typing import Optional
 from dotenv import load_dotenv
 
+# Load .env file explicitly
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL not set. Check your .env file.")
-
 _pool: Optional[asyncpg.Pool] = None
+
 
 async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
-        _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=10)
+        _pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            min_size=1,
+            max_size=10,
+            statement_cache_size=0  # Required for Supabase pgbouncer
+        )
     return _pool
 
+
 async def get_db():
+    """Dependency — yields a single connection from the pool."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         yield conn
 
+
 async def create_tables():
+    """Create all tables if they don't exist (runs on startup)."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute("""
@@ -47,6 +60,7 @@ async def create_tables():
                 jd_matches_run INT DEFAULT 0,
                 created_at  TIMESTAMPTZ DEFAULT NOW()
             );
+
             CREATE TABLE IF NOT EXISTS resumes (
                 id              SERIAL PRIMARY KEY,
                 user_id         INT REFERENCES users(id) ON DELETE CASCADE,
@@ -59,6 +73,7 @@ async def create_tables():
                 created_at      TIMESTAMPTZ DEFAULT NOW(),
                 updated_at      TIMESTAMPTZ DEFAULT NOW()
             );
+
             CREATE TABLE IF NOT EXISTS sessions (
                 id          SERIAL PRIMARY KEY,
                 user_id     INT REFERENCES users(id) ON DELETE CASCADE,
@@ -68,6 +83,7 @@ async def create_tables():
                 date        TEXT NOT NULL,
                 created_at  TIMESTAMPTZ DEFAULT NOW()
             );
+
             CREATE TABLE IF NOT EXISTS session_questions (
                 id          SERIAL PRIMARY KEY,
                 session_id  INT REFERENCES sessions(id) ON DELETE CASCADE,
@@ -78,6 +94,7 @@ async def create_tables():
                 ideal_answer TEXT,
                 missed      TEXT
             );
+
             CREATE TABLE IF NOT EXISTS skill_gaps (
                 id              SERIAL PRIMARY KEY,
                 user_id         INT REFERENCES users(id) ON DELETE CASCADE,
