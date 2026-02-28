@@ -8,19 +8,26 @@ NLP Engine
 import re
 from typing import List, Tuple
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-import spacy
-
-# ── Load spaCy model ──────────────────────────────────────────────────────────
-# We use the small English model (en_core_web_sm) — fast and sufficient for
-# skill extraction and text processing.
+# scikit-learn for TF-IDF similarity scoring
 try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    # If model not downloaded yet, fall back gracefully
-    nlp = None
-    print("⚠️  spaCy model not found. Run: python -m spacy download en_core_web_sm")
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    print("⚠️  scikit-learn not available, using Jaccard only")
+
+# spaCy is optional — regex extraction works without it
+nlp = None
+try:
+    import spacy
+    try:
+        nlp = spacy.load("en_core_web_sm")
+        print("✅ spaCy loaded")
+    except OSError:
+        print("⚠️  spaCy model not found. Using regex extraction only.")
+except Exception as e:
+    print(f"⚠️  spaCy not available: {e}. Using regex extraction only.")
 
 # ── Master skill list ─────────────────────────────────────────────────────────
 SKILLS = [
