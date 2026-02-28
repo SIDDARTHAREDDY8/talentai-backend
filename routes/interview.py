@@ -69,13 +69,13 @@ async def evaluate_answer(
         final_score = round(ai_result["score"] * 0.7 + sim_score * 0.3)
         final_score = max(5, min(100, final_score))
         feedback    = ai_result.get("feedback", "")
-        ideal       = ai_result.get("ideal", "")
+        ideal       = ai_result.get("ideal") or body.referenceAnswer
         missed      = ai_result.get("missed", "")
     else:
-        # Fallback: use NLP score only
+        # Fallback: use NLP score only + always show reference as ideal
         final_score = sim_score
-        feedback    = f"Score based on keyword and semantic similarity analysis."
-        ideal       = ""
+        feedback    = "Score based on keyword and semantic similarity analysis."
+        ideal       = body.referenceAnswer
         missed      = ""
 
     # Update today_count
