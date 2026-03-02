@@ -173,10 +173,11 @@ async def skill_gaps_plan(
     present_req = [s for s in req if s.lower() in present_set]
     coverage = round(len(present_req) / len(req) * 100) if req else 0
 
+    import json as _json
     await db.execute(
         """INSERT INTO skill_gaps (user_id, target_role, coverage, present_skills, missing_skills, learning_plan)
            VALUES ($1, $2, $3, $4, $5, $6)""",
-        user["id"], body.role, coverage, present_req, body.missingSkills, plan or {},
+        user["id"], body.role, coverage, present_req, body.missingSkills, _json.dumps(plan or {}),
     )
 
     await db.execute(
@@ -184,4 +185,8 @@ async def skill_gaps_plan(
         body.role, user["id"],
     )
 
-    return {"plan": plan, "coverage": coverage, "presentSkills": present_req}
+    # Return plan fields directly so frontend can access plan.priority, plan.timeline etc
+    result = plan or {}
+    result["coverage"] = coverage
+    result["presentSkills"] = present_req
+    return result
