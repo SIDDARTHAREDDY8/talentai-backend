@@ -150,22 +150,20 @@ async def ai_generate_cover_letter(
     jd_text: str,
     company: str,
     tone: str,
+    date_str: Optional[str] = None,
     api_key: Optional[str] = None,
 ) -> str:
     """Generate a tailored cover letter."""
     from datetime import date
-    today = date.today().strftime("%B %d, %Y")
-    return await call_ai(
-        f"""Write a complete, professional cover letter.
+    today = date_str or date.today().strftime("%B %d, %Y")
+    letter = await call_ai(
+        f"""Write a professional cover letter body.
 Resume: {resume_text[:2000]}
 Job Description: {jd_text[:1500]}
 Company: {company or "the company"}
 Tone: {tone}
-Today's date: {today}
 
 You MUST follow this exact structure:
-{today}
-
 Dear Hiring Manager,
 
 [Opening paragraph - strong hook, do NOT start with "I am writing to"]
@@ -181,13 +179,16 @@ Requirements:
 - ~300 words total
 - Sound human and specific, not generic
 - No clichés like "team player" or "hardworking"
-- Include the date, salutation, 3 paragraphs, and sign-off exactly as shown above
+- Do NOT include any date line — start directly with Dear Hiring Manager
+- Include salutation, 3 paragraphs, and sign-off exactly as shown
 
-Return only the complete letter text.""",
-        system="You are an expert cover letter writer. Always include proper letter formatting with date, salutation, body paragraphs, and sign-off.",
+Return only the letter text starting with Dear Hiring Manager.""",
+        system="You are an expert cover letter writer.",
         max_tokens=1000,
         api_key=api_key,
     )
+    # Prepend the correct date from the frontend (never let AI decide the date)
+    return f"{today}\n\n{letter.strip()}" 
 
 
 async def ai_learning_plan(role: str, missing_skills: list, api_key: Optional[str] = None) -> Optional[dict]:
