@@ -154,23 +154,35 @@ async def ai_generate_cover_letter(
 ) -> str:
     """Generate a tailored cover letter."""
     return await call_ai(
-        f"""Write a compelling cover letter.
+        f"""Write a complete, professional cover letter.
 Resume: {resume_text[:2000]}
 Job Description: {jd_text[:1500]}
 Company: {company or "the company"}
 Tone: {tone}
 
+You MUST follow this exact structure:
+[Today's Date]
+
+Dear Hiring Manager,
+
+[Opening paragraph - strong hook, do NOT start with "I am writing to"]
+
+[Middle paragraph - specific alignment between candidate skills and JD requirements]
+
+[Closing paragraph - strong close with call to action]
+
+Sincerely,
+[Candidate Full Name from resume]
+
 Requirements:
-- 3 paragraphs, ~270 words
-- Hook opening — do NOT start with "I am writing to"
-- Paragraph 2: specific alignment between candidate skills and JD requirements
-- Paragraph 3: strong close with call to action
+- ~300 words total
 - Sound human and specific, not generic
 - No clichés like "team player" or "hardworking"
+- Include the date, salutation, 3 paragraphs, and sign-off exactly as shown above
 
-Return only the letter text, no subject line or extra commentary.""",
-        system="You are an expert cover letter writer.",
-        max_tokens=900,
+Return only the complete letter text.""",
+        system="You are an expert cover letter writer. Always include proper letter formatting with date, salutation, body paragraphs, and sign-off.",
+        max_tokens=1000,
         api_key=api_key,
     )
 
