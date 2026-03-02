@@ -153,15 +153,18 @@ async def ai_generate_cover_letter(
     api_key: Optional[str] = None,
 ) -> str:
     """Generate a tailored cover letter."""
+    from datetime import date
+    today = date.today().strftime("%B %d, %Y")
     return await call_ai(
         f"""Write a complete, professional cover letter.
 Resume: {resume_text[:2000]}
 Job Description: {jd_text[:1500]}
 Company: {company or "the company"}
 Tone: {tone}
+Today's date: {today}
 
 You MUST follow this exact structure:
-[Today's Date]
+{today}
 
 Dear Hiring Manager,
 
