@@ -1,6 +1,6 @@
 """
-Database — async PostgreSQL via asyncpg
-Connects to Supabase (free PostgreSQL hosting)
+Database — async PostgreSQL via asyncpg.
+Uses ALTER TABLE ... ADD COLUMN IF NOT EXISTS for safe schema migrations.
 """
 
 import os
@@ -8,7 +8,6 @@ import asyncpg
 from typing import Optional
 from dotenv import load_dotenv
 
-# Load .env file explicitly
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
@@ -19,26 +18,28 @@ _pool: Optional[asyncpg.Pool] = None
 async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
+        # Strip sslmode from URL if present — asyncpg requires ssl kwarg instead
+        url = DATABASE_URL.split("?")[0]
         _pool = await asyncpg.create_pool(
-            DATABASE_URL,
+            url,
             min_size=1,
             max_size=10,
-            statement_cache_size=0  # Required for Supabase pgbouncer
+            statement_cache_size=0,
+            ssl="require",
         )
     return _pool
 
 
 async def get_db():
-    """Dependency — yields a single connection from the pool."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         yield conn
 
 
 async def create_tables():
-    """Create all tables if they don't exist (runs on startup)."""
     pool = await get_pool()
     async with pool.acquire() as conn:
+        # Core tables
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id          SERIAL PRIMARY KEY,
@@ -106,4 +107,30 @@ async def create_tables():
                 created_at      TIMESTAMPTZ DEFAULT NOW()
             );
         """)
+
+        # Additive migrations — safe to run repeatedly
+        new_columns = [
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'active';",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMPTZ;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verify_token TEXT;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_token TEXT;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMPTZ;",
+            # OAuth — allows social login without a password
+            "ALTER TABLE users ALTER COLUMN password DROP NOT NULL;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_provider TEXT;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_id TEXT;",
+        ]
+        for stmt in new_columns:
+            await conn.execute(stmt)
+
+        # Unique index so the same provider account can't link to two users
+        await conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS users_oauth_unique
+            ON users (oauth_provider, oauth_id)
+            WHERE oauth_provider IS NOT NULL;
+        """)
+
     print("✅ Database tables ready")

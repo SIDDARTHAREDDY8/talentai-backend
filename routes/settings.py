@@ -1,8 +1,12 @@
-"""Settings routes — PATCH /settings"""
+"""
+Settings routes — PATCH /settings
+Plan changes are handled exclusively via Stripe webhooks (routes/billing.py).
+"""
+
+from typing import Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from typing import Optional
 import asyncpg
 
 from database import get_db
@@ -13,7 +17,6 @@ router = APIRouter()
 
 class UpdateSettingsRequest(BaseModel):
     dailyGoal: Optional[int] = None
-    plan: Optional[str] = None
 
 
 @router.patch("/")
@@ -23,13 +26,6 @@ async def update_settings(
     db: asyncpg.Connection = Depends(get_db),
 ):
     if body.dailyGoal is not None:
-        await db.execute(
-            "UPDATE users SET daily_goal=$1 WHERE id=$2",
-            body.dailyGoal, user["id"],
-        )
-    if body.plan in ("free", "pro", "team"):
-        await db.execute(
-            "UPDATE users SET plan=$1 WHERE id=$2",
-            body.plan, user["id"],
-        )
+        goal = max(1, min(10, body.dailyGoal))
+        await db.execute("UPDATE users SET daily_goal=$1 WHERE id=$2", goal, user["id"])
     return {"success": True}

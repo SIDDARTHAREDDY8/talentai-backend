@@ -5,9 +5,40 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
+      # ── Core ──────────────────────────────────────────────────
       - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
         sync: false
       - key: AI_API_KEY
         sync: false
-      - key: SECRET_KEY
+
+      # ── CORS — set to your Vercel frontend URL ─────────────────
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+
+      # ── Email (Resend) ─────────────────────────────────────────
+      - key: RESEND_API_KEY
+        sync: false
+      - key: FROM_EMAIL
+        sync: false
+
+      # ── Google OAuth ───────────────────────────────────────────
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+
+      # ── GitHub OAuth ───────────────────────────────────────────
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+
+      # ── Stripe (billing) ───────────────────────────────────────
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
         sync: false

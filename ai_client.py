@@ -1,33 +1,29 @@
 """
-AI Client — wraps Anthropic API calls
-All LLM-powered features go through here.
+AI Client — Anthropic API calls (server-side key only).
+All user-facing apiKey fields have been removed.
 """
 
 import os
 import json
+import logging
 import httpx
 from typing import Optional
 
-ANTHROPIC_API_KEY = os.getenv("AI_API_KEY", "")
+logger = logging.getLogger(__name__)
+
+API_KEY = os.getenv("AI_API_KEY", "")
 MODEL = "claude-haiku-4-5-20251001"
 BASE_URL = "https://api.anthropic.com/v1/messages"
 
 
-async def call_ai(
-    prompt: str,
-    system: str = "You are an expert AI assistant.",
-    max_tokens: int = 1000,
-    api_key: Optional[str] = None,
-) -> str:
-    """Send a prompt to the AI and return the text response."""
-    key = api_key or ANTHROPIC_API_KEY
-    if not key:
-        print("⚠️  No AI API key configured. Set AI_API_KEY in .env")
+async def _call(prompt: str, system: str = "You are an expert AI assistant.", max_tokens: int = 1000) -> str:
+    if not API_KEY:
+        logger.warning("AI_API_KEY not set — skipping AI call")
         return ""
 
     headers = {
         "Content-Type": "application/json",
-        "x-api-key": key,
+        "x-api-key": API_KEY,
         "anthropic-version": "2023-06-01",
     }
     body = {
@@ -40,53 +36,29 @@ async def call_ai(
     async with httpx.AsyncClient(timeout=30) as client:
         try:
             resp = await client.post(BASE_URL, headers=headers, json=body)
-            data = resp.json()
-            print(f"🔍 AI API status: {resp.status_code}, key_prefix: {key[:15] if key else 'NONE'}")
             if resp.status_code != 200:
-                print(f"❌ AI API error {resp.status_code}: {data}")
+                logger.error(f"AI API error {resp.status_code}: {resp.text[:200]}")
                 return ""
-            text = data.get("content", [{}])[0].get("text", "")
-            print(f"✅ AI API responded, {len(text)} chars")
-            return text
+            return resp.json().get("content", [{}])[0].get("text", "")
         except Exception as e:
-            print(f"❌ AI API exception: {e}")
-            return ""  
+            logger.exception(f"AI API exception: {e}")
+            return ""
 
 
-async def call_ai_json(
-    prompt: str,
-    system: str = "Return only valid JSON, no markdown fences.",
-    max_tokens: int = 800,
-    api_key: Optional[str] = None,
-) -> Optional[dict]:
-    """Call AI and parse JSON response. Returns None on failure."""
-    text = await call_ai(prompt, system, max_tokens, api_key)
+async def _call_json(prompt: str, system: str = "Return only valid JSON, no markdown fences.", max_tokens: int = 800) -> Optional[dict]:
+    text = await _call(prompt, system, max_tokens)
     if not text:
-        print("⚠️  call_ai returned empty text")
         return None
     try:
-        clean = text.strip().replace("```json", "").replace("```", "").strip()
-        result = json.loads(clean)
-        print(f"✅ AI JSON parsed OK: {list(result.keys())}")
-        return result
-    except json.JSONDecodeError as e:
-        print(f"❌ JSON parse error: {e} | Raw text: {text[:200]}")
+        clean = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        return json.loads(clean)
+    except json.JSONDecodeError:
+        logger.error(f"JSON parse failed, raw: {text[:200]}")
         return None
 
 
-# ── Specific AI tasks ─────────────────────────────────────────────────────────
-
-async def ai_evaluate_answer(
-    question: str,
-    user_answer: str,
-    reference: str,
-    api_key: Optional[str] = None,
-) -> Optional[dict]:
-    """
-    Ask AI to evaluate a candidate's interview answer.
-    Returns {score, feedback, ideal, missed}
-    """
-    return await call_ai_json(
+async def ai_evaluate_answer(question: str, user_answer: str, reference: str) -> Optional[dict]:
+    return await _call_json(
         f"""Senior technical interviewer. Evaluate strictly.
 Question: {question}
 Candidate answer: {user_answer}
@@ -96,18 +68,13 @@ Return JSON: {{
   "score": 0-100,
   "feedback": "2-3 specific sentences on what was good and what was missing",
   "ideal": "model answer in 3-5 sentences",
-  "missed": "the single most important concept the candidate missed, or empty string"
-}}""",
-        api_key=api_key,
+  "missed": "the single most important concept missed, or empty string"
+}}"""
     )
 
 
-async def ai_analyze_resume(resume_text: str, api_key: Optional[str] = None) -> Optional[dict]:
-    """
-    Ask AI to assess the resume holistically.
-    Returns {strengths, level, bestRole, improvements, summary, atsScore, atsIssues}
-    """
-    return await call_ai_json(
+async def ai_analyze_resume(resume_text: str) -> Optional[dict]:
+    return await _call_json(
         f"""Analyze this resume as an expert recruiter.
 Resume: {resume_text[:3000]}
 
@@ -119,14 +86,12 @@ Return JSON: {{
   "summary": "2-sentence profile summary",
   "atsScore": 0-100,
   "atsIssues": ["up to 3 ATS/formatting issues found"]
-}}""",
-        api_key=api_key,
+}}"""
     )
 
 
-async def ai_match_jd(resume_text: str, jd_text: str, api_key: Optional[str] = None) -> Optional[dict]:
-    """Compare resume to job description."""
-    return await call_ai_json(
+async def ai_match_jd(resume_text: str, jd_text: str) -> Optional[dict]:
+    return await _call_json(
         f"""Hiring manager. Compare resume to job description.
 Resume: {resume_text[:2500]}
 Job Description: {jd_text[:2000]}
@@ -140,60 +105,41 @@ Return JSON: {{
   "gaps": ["2-3 concerns or gaps"],
   "recommendation": "2-sentence hiring recommendation",
   "tailoredTip": "1 specific tip to tailor the application"
-}}""",
-        api_key=api_key,
+}}"""
     )
 
 
-async def ai_generate_cover_letter(
-    resume_text: str,
-    jd_text: str,
-    company: str,
-    tone: str,
-    date_str: Optional[str] = None,
-    api_key: Optional[str] = None,
-) -> str:
-    """Generate a tailored cover letter."""
+async def ai_generate_cover_letter(resume_text: str, jd_text: str, company: str, tone: str) -> str:
     from datetime import date
-    today = date_str or date.today().strftime("%B %d, %Y")
-    letter = await call_ai(
+    today = date.today().strftime("%B %d, %Y")
+    letter = await _call(
         f"""Write a professional cover letter body.
 Resume: {resume_text[:2000]}
 Job Description: {jd_text[:1500]}
 Company: {company or "the company"}
 Tone: {tone}
 
-You MUST follow this exact structure:
+Structure exactly:
 Dear Hiring Manager,
 
-[Opening paragraph - strong hook, do NOT start with "I am writing to"]
+[Opening paragraph - strong hook]
 
-[Middle paragraph - specific alignment between candidate skills and JD requirements]
+[Middle paragraph - skills aligned with JD]
 
-[Closing paragraph - strong close with call to action]
+[Closing paragraph - call to action]
 
 Sincerely,
 [Candidate Full Name from resume]
 
-Requirements:
-- ~300 words total
-- Sound human and specific, not generic
-- No clichés like "team player" or "hardworking"
-- Do NOT include any date line — start directly with Dear Hiring Manager
-- Include salutation, 3 paragraphs, and sign-off exactly as shown
-
-Return only the letter text starting with Dear Hiring Manager.""",
+~300 words. Sound human and specific. No clichés. Start directly with Dear Hiring Manager.""",
         system="You are an expert cover letter writer.",
         max_tokens=1000,
-        api_key=api_key,
     )
-    # Prepend the correct date from the frontend (never let AI decide the date)
-    return f"{today}\n\n{letter.strip()}" 
+    return f"{today}\n\n{letter.strip()}"
 
 
-async def ai_learning_plan(role: str, missing_skills: list, api_key: Optional[str] = None) -> Optional[dict]:
-    """Generate a personalized learning plan for missing skills."""
-    return await call_ai_json(
+async def ai_learning_plan(role: str, missing_skills: list) -> Optional[dict]:
+    return await _call_json(
         f"""Create a learning plan for someone targeting {role}.
 Missing skills: {', '.join(missing_skills[:10])}
 
@@ -202,6 +148,32 @@ Return JSON: {{
   "timeline": "X weeks",
   "resources": {{"skill_name": "specific resource or course"}},
   "weeklyPlan": ["week 1 focus", "week 2 focus", "week 3 focus"]
-}}""",
-        api_key=api_key,
+}}"""
     )
+
+
+async def ai_coach_reply(messages: list, skills: list, level: str, target_role: str) -> str:
+    system = f"""You are an expert AI career coach for tech professionals.
+User profile: Skills: {', '.join(skills[:20]) or 'not provided'}. Level: {level or 'unknown'}. Target role: {target_role or 'not specified'}.
+Be practical, specific, and encouraging. Keep responses under 200 words unless depth is genuinely needed."""
+
+    headers = {
+        "Content-Type": "application/json",
+        "x-api-key": API_KEY,
+        "anthropic-version": "2023-06-01",
+    }
+    body = {
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 600,
+        "system": system,
+        "messages": messages,
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.post(BASE_URL, headers=headers, json=body)
+            if resp.status_code != 200:
+                return "Sorry, I couldn't respond right now. Please try again."
+            return resp.json().get("content", [{}])[0].get("text", "Sorry, I couldn't respond.")
+        except Exception:
+            return "Sorry, I couldn't respond right now."
