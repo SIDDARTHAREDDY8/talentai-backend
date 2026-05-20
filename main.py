@@ -5,6 +5,7 @@ TalentAI — FastAPI Backend
 from dotenv import load_dotenv
 load_dotenv()
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -17,6 +18,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from database import create_tables
+from keep_alive import start_keep_alive
 from routes import auth, resume, interview, sessions, analytics, settings, billing
 
 logging.basicConfig(
@@ -32,6 +34,7 @@ ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://local
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_tables()
+    asyncio.create_task(start_keep_alive())
     yield
 
 
